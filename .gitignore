@@ -1,0 +1,39 @@
+# Environment variables (API Keys, secrets)
+.env
+*.env.local
+
+# Python cache & artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# SQLite Database
+*.db
+*.sqlite3
+
+# Uploaded files / temporary data
+uploads/*
+!uploads/.gitkeep
+
+# Node / UI build artifacts
+node_modules/
+**/node_modules/
+dist/
+build/
+.npm/
+
+# IDEs & OS metadata
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

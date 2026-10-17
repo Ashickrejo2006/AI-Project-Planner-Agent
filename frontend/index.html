@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>AI Project Planner — LangGraph Agent</title>
+  <meta name="description" content="Autonomous AI-powered project planning agent. Decompose goals, schedule tasks, assess risks, and replan with LangGraph." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧠</text></svg>" />
+</head>
+<body>
+
+<!-- ─── Toast Container ─────────────────────────────────────── -->
+<div class="toast-container" id="toastContainer"></div>
+
+<!-- ─── Task Detail Overlay ────────────────────────────────── -->
+<div class="task-detail-overlay" id="taskDetailOverlay">
+  <div class="task-detail-panel">
+    <div class="detail-header">
+      <div>
+        <div class="detail-id" id="detailTaskId"></div>
+        <div class="detail-title" id="detailTaskTitle"></div>
+      </div>
+      <button class="detail-close" onclick="closeTaskDetail()">✕</button>
+    </div>
+
+    <div class="detail-grid">
+      <div class="detail-field">
+        <div class="detail-field-label">Phase</div>
+        <div class="detail-field-value" id="detailPhase">—</div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-field-label">Priority</div>
+        <div class="detail-field-value" id="detailPriority">—</div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-field-label">Duration</div>
+        <div class="detail-field-value" id="detailDuration">—</div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-field-label">Current Status</div>
+        <div class="detail-field-value" id="detailStatus">—</div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-field-label">Start Date</div>
+        <div class="detail-field-value font-mono" id="detailStart">—</div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-field-label">End Date</div>
+        <div class="detail-field-value font-mono" id="detailEnd">—</div>
+      </div>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Description</div>
+      <p style="font-size:.86rem;color:var(--text-secondary);line-height:1.65" id="detailDescription">—</p>
+    </div>
+
+    <div class="detail-section" id="detailDepsSection">
+      <div class="detail-section-title">Dependencies</div>
+      <div id="detailDeps" style="display:flex;gap:6px;flex-wrap:wrap;"></div>
+    </div>
+
+    <div class="detail-section" id="detailCriteriaSection">
+      <div class="detail-section-title">Completion Criteria</div>
+      <p style="font-size:.86rem;color:var(--text-secondary);line-height:1.65" id="detailCriteria">—</p>
+    </div>
+
+    <div class="detail-section">
+      <div class="detail-section-title">Update Status</div>
+      <div class="status-select-row">
+        <select class="form-control" id="detailStatusSelect" style="max-width:200px">
+          <option value="not_started">Not Started</option>
+          <option value="in_progress">In Progress</option>
+          <option value="completed">Completed</option>
+          <option value="blocked">Blocked</option>
+          <option value="delayed">Delayed</option>
+        </select>
+        <input type="text" class="form-control" id="detailNotes" placeholder="Add a note…" style="flex:1" />
+        <button class="btn btn-primary btn-sm" id="detailSaveBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ─── App Shell ────────────────────────────────────────────── -->
+<div class="app-shell">
+
+  <!-- ── Sidebar ────────────────────────────────────────────── -->
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <a class="logo-mark" href="#" onclick="navigate('dashboard'); return false;">
+        <div class="logo-icon">🧠</div>
+        <div>
+          <div class="logo-text">AI Planner</div>
+          <div class="logo-sub">LangGraph Agent</div>
+        </div>
+      </a>
+    </div>
+
+    <div class="sidebar-section">
+      <div class="sidebar-section-label">Navigation</div>
+      <button class="nav-item active" data-view="dashboard" onclick="navigate('dashboard')">
+        <span class="nav-icon">⚡</span> Dashboard
+      </button>
+      <button class="nav-item" data-view="agent" onclick="navigate('agent')">
+        <span class="nav-icon">🤖</span> AI Agent
+      </button>
+      <button class="nav-item" data-view="tasks" onclick="navigate('tasks')">
+        <span class="nav-icon">📋</span> Tasks
+        <span class="nav-badge" id="navTaskCount">0</span>
+      </button>
+      <button class="nav-item" data-view="timeline" onclick="navigate('timeline')">
+        <span class="nav-icon">📅</span> Timeline
+      </button>
+      <button class="nav-item" data-view="history" onclick="navigate('history')">
+        <span class="nav-icon">📜</span> History
+      </button>
+    </div>
+
+    <div class="sidebar-section" style="border-top:1px solid var(--border);padding-top:14px;">
+      <div class="sidebar-section-label">Projects</div>
+      <button class="nav-item" onclick="navigate('new-project')" style="color:var(--indigo-400)">
+        <span class="nav-icon">＋</span> New Project
+      </button>
+    </div>
+
+    <div class="project-list" id="projectList">
+      <!-- injected by JS -->
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="api-status warn" id="apiStatus" style="cursor:pointer;" onclick="openKeyModal()" title="Click to configure API key">
+        <span>⚠</span> <span id="apiStatusText">Checking…</span>
+      </div>
+    </div>
+  </aside>
+
+  <!-- ── Main ───────────────────────────────────────────────── -->
+  <main class="main">
+
+    <!-- Top bar -->
+    <header class="topbar">
+      <div class="topbar-breadcrumb">
+        <span id="topbarProject">AI Project Planner</span>
+        <span class="sep">›</span>
+        <span id="topbarView">Dashboard</span>
+      </div>
+      <div class="topbar-actions">
+        <button class="btn btn-secondary btn-sm" onclick="openKeyModal()" title="Configure LLM API Key">🔑 API Key</button>
+        <button class="btn btn-secondary btn-sm" onclick="loadProjects()" title="Refresh">↻ Refresh</button>
+        <button class="btn btn-primary btn-sm" onclick="navigate('new-project')">＋ New Project</button>
+      </div>
+    </header>
+
+    <!-- Page content -->
+    <div class="page-content">
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: Dashboard
+      ══════════════════════════════════════════════════════ -->
+      <div class="view active" id="view-dashboard">
+        <div id="welcomeBlock">
+          <div class="hero-wrap">
+            <div class="hero-badge">✨ Powered by LangGraph + GPT-4o-mini</div>
+            <h1 class="hero-title">AI Project Planner</h1>
+            <p class="hero-sub">
+              Describe your project. Our autonomous AI agent decomposes it into phased tasks,
+              calculates deadlines, assesses risks, and replans automatically when things shift.
+            </p>
+            <div class="hero-features">
+              <div class="hero-feature">
+                <div class="feat-icon">🤖</div>
+                <div class="feat-title">Autonomous Decomposition</div>
+                <div class="feat-desc">LangGraph Plan-Act-Evaluate loop breaks goals into structured task graphs.</div>
+              </div>
+              <div class="hero-feature">
+                <div class="feat-icon">📅</div>
+                <div class="feat-title">Smart Scheduling</div>
+                <div class="feat-desc">Dates respect working days, holidays, and task dependencies automatically.</div>
+              </div>
+              <div class="hero-feature">
+                <div class="feat-icon">🔄</div>
+                <div class="feat-title">Dynamic Replanning</div>
+                <div class="feat-desc">Block a task and the agent cascades schedule shifts to all dependents.</div>
+              </div>
+            </div>
+            <button class="btn btn-primary" onclick="navigate('new-project')" style="font-size:.95rem;padding:12px 32px">
+              🚀 Create Your First Project
+            </button>
+          </div>
+        </div>
+
+        <!-- Project dashboard (shown when a project is selected) -->
+        <div id="dashboardBlock" class="hidden">
+          <div class="section-header">
+            <div>
+              <div class="section-title" id="dashProjName">Project Name</div>
+              <div class="section-subtitle" id="dashProjMeta">—</div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button class="btn btn-secondary btn-sm" onclick="openReplanModal()">🔄 Replan</button>
+              <button class="btn btn-danger btn-sm" id="deleteProjectBtn" onclick="deleteCurrentProject()">🗑 Delete</button>
+            </div>
+          </div>
+
+          <!-- KPIs -->
+          <div class="kpi-grid mb-4" id="kpiGrid">
+            <div class="kpi-card">
+              <div class="kpi-icon">📊</div>
+              <div class="kpi-value" id="kpiProgress">0%</div>
+              <div class="kpi-label">Progress</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-icon">✅</div>
+              <div class="kpi-value" id="kpiDone">0</div>
+              <div class="kpi-label">Completed</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-icon">🔵</div>
+              <div class="kpi-value" id="kpiInProgress">0</div>
+              <div class="kpi-label">In Progress</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-icon">⚠️</div>
+              <div class="kpi-value" id="kpiOverdue">0</div>
+              <div class="kpi-label">Overdue</div>
+            </div>
+            <div class="kpi-card">
+              <div class="kpi-icon">🚫</div>
+              <div class="kpi-value" id="kpiBlocked">0</div>
+              <div class="kpi-label">Blocked</div>
+            </div>
+          </div>
+
+          <!-- Progress bar -->
+          <div class="card mb-4">
+            <div class="progress-label">
+              <span>Overall Completion</span>
+              <strong id="progressPct">0%</strong>
+            </div>
+            <div class="progress-wrap">
+              <div class="progress-fill" id="progressFill" style="width:0%"></div>
+            </div>
+          </div>
+
+          <!-- Risk + Evaluation row -->
+          <div class="grid-2 mb-4">
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">⚠️ Risk Assessment</div>
+                <div class="badge" id="riskBadge">—</div>
+              </div>
+              <div id="riskGaugeWrap" class="risk-gauge-wrap mb-3">
+                <div style="font-size:2rem" id="riskEmoji">🟡</div>
+                <div class="risk-gauge-bar-wrap">
+                  <div class="risk-gauge-bar">
+                    <div class="risk-gauge-fill" id="riskGaugeFill" style="width:45%"></div>
+                  </div>
+                  <div class="mt-1 text-xs text-muted" id="riskLabel">Medium risk</div>
+                </div>
+              </div>
+              <ul id="riskList" style="font-size:.82rem;color:var(--text-secondary);line-height:2;list-style:none;padding:0;max-height:150px;overflow-y:auto"></ul>
+            </div>
+
+            <div class="card">
+              <div class="card-header">
+                <div class="card-title">🧠 AI Evaluation</div>
+              </div>
+              <div id="evaluationText" style="font-size:.84rem;color:var(--text-secondary);line-height:1.75;white-space:pre-wrap;max-height:230px;overflow-y:auto">
+                No evaluation yet. Generate a plan to receive AI analysis.
+              </div>
+            </div>
+          </div>
+
+          <!-- Phase breakdown -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">📦 Task Distribution by Phase</div>
+            </div>
+            <div id="phaseChart" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;height:100px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: New Project / AI Agent
+      ══════════════════════════════════════════════════════ -->
+      <div class="view" id="view-new-project">
+        <div class="section-header">
+          <div>
+            <div class="section-title">Create New Project</div>
+            <div class="section-subtitle">Fill in the details — the AI agent will decompose it into an actionable plan</div>
+          </div>
+        </div>
+
+        <div style="max-width:720px">
+          <div class="card mb-4">
+            <div class="card-header">
+              <div class="card-title">📌 Project Details</div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Project Title <span class="required">*</span></label>
+              <input type="text" class="form-control" id="newProjName"
+                placeholder="e.g. E-commerce Platform, Mobile Banking App…" />
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Description / Goals <span class="required">*</span></label>
+              <textarea class="form-control" id="newProjDesc" rows="4"
+                placeholder="Describe what the project does, its target users, and key features you want to build…"></textarea>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Tech Stack <span class="required">*</span></label>
+                <input type="text" class="form-control" id="newProjTech"
+                  placeholder="React, FastAPI, PostgreSQL, Docker…" />
+              </div>
+              <div class="form-group">
+                <label class="form-label">Deadline <span class="required">*</span></label>
+                <input type="date" class="form-control" id="newProjDeadline" />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label class="form-label">Available Weekly Hours</label>
+                <input type="number" class="form-control" id="newProjHours"
+                  value="20" min="1" max="80" step="1" />
+                <div class="form-hint">Hours you can dedicate per week</div>
+              </div>
+              <div class="form-group">
+                <label class="form-label">Holiday Region</label>
+                <select class="form-control" id="newProjCountry">
+                  <option value="US">🇺🇸 United States</option>
+                  <option value="GB">🇬🇧 United Kingdom</option>
+                  <option value="IN" selected>🇮🇳 India</option>
+                  <option value="AU">🇦🇺 Australia</option>
+                  <option value="CA">🇨🇦 Canada</option>
+                  <option value="DE">🇩🇪 Germany</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          <!-- PRD Upload -->
+          <div class="card mb-4">
+            <div class="card-header">
+              <div class="card-title">📄 PRD Document (Optional)</div>
+            </div>
+            <div class="drop-zone" id="dropZone" onclick="document.getElementById('prdFile').click()">
+              <input type="file" id="prdFile" accept=".pdf,.docx,.md,.txt" onchange="handleFileUpload(this)" />
+              <div class="dz-icon">📂</div>
+              <div class="dz-title">Drop your PRD here</div>
+              <div class="dz-sub">Supports .pdf, .docx, .md, .txt — Max 10 MB</div>
+            </div>
+            <div id="prdPreview" class="hidden mt-2">
+              <div class="alert alert-info">
+                <span class="alert-icon">📄</span>
+                <div>
+                  <strong id="prdFileName"></strong>
+                  <div class="mt-1 text-sm text-muted" id="prdPreviewText" style="max-height:80px;overflow:hidden;white-space:pre-wrap"></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <button class="btn btn-primary w-full" id="generatePlanBtn" onclick="generatePlan()"
+            style="padding:14px;font-size:.95rem">
+            🚀 Generate AI Plan
+          </button>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: AI Agent (Chat-style interaction)
+      ══════════════════════════════════════════════════════ -->
+      <div class="view" id="view-agent">
+        <div class="section-header">
+          <div>
+            <div class="section-title">🤖 AI Agent</div>
+            <div class="section-subtitle">Live agent interaction — watch the LangGraph pipeline execute in real time</div>
+          </div>
+        </div>
+
+        <!-- Stage indicators -->
+        <div class="stage-bar mb-3" id="stageBar">
+          <div class="stage" id="stage-start">INIT</div>
+          <div class="stage" id="stage-plan">PLAN</div>
+          <div class="stage" id="stage-schedule">SCHEDULE</div>
+          <div class="stage" id="stage-risk">RISK</div>
+          <div class="stage" id="stage-complete">DONE</div>
+        </div>
+
+        <div class="chat-container">
+          <div class="chat-messages" id="chatMessages">
+            <div class="chat-message">
+              <div class="chat-avatar avatar-ai">🧠</div>
+              <div class="chat-bubble">
+                <div class="bubble-sender">AI Planner Agent</div>
+                Hello! I'm your autonomous AI project planning agent powered by LangGraph.
+                Create a new project from the sidebar and I'll decompose it into a detailed,
+                scheduled task plan — complete with risk analysis and feasibility evaluation.
+              </div>
+            </div>
+          </div>
+
+          <div class="chat-input-row">
+            <div class="chat-input-wrap">
+              <textarea class="chat-input" id="agentPrompt" rows="1"
+                placeholder="Ask the agent something… e.g. 'What are the highest-risk tasks?'"
+                onkeydown="handleChatKey(event)"></textarea>
+            </div>
+            <button class="btn btn-primary" id="agentSendBtn" onclick="sendAgentMessage()">
+              ➤ Send
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: Tasks (Kanban)
+      ══════════════════════════════════════════════════════ -->
+      <div class="view" id="view-tasks">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📋 Task Board</div>
+            <div class="section-subtitle" id="taskBoardMeta">Select a project to view tasks</div>
+          </div>
+          <div style="display:flex;gap:8px;align-items:center">
+            <!-- Filter -->
+            <select class="form-control" id="phaseFilter" onchange="renderKanban()" style="width:auto;font-size:.8rem;padding:6px 10px">
+              <option value="">All Phases</option>
+              <option value="discovery">Discovery</option>
+              <option value="planning">Planning</option>
+              <option value="design">Design</option>
+              <option value="development">Development</option>
+              <option value="testing">Testing</option>
+              <option value="deployment">Deployment</option>
+              <option value="maintenance">Maintenance</option>
+            </select>
+            <select class="form-control" id="priorityFilter" onchange="renderKanban()" style="width:auto;font-size:.8rem;padding:6px 10px">
+              <option value="">All Priorities</option>
+              <option value="critical">Critical</option>
+              <option value="high">High</option>
+              <option value="medium">Medium</option>
+              <option value="low">Low</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="kanban" id="kanbanBoard">
+          <div class="kanban-col col-todo">
+            <div class="kanban-col-header">
+              <div class="kanban-col-title"><div class="kanban-dot"></div>Not Started</div>
+              <div class="kanban-count" id="countTodo">0</div>
+            </div>
+            <div class="kanban-cards" id="colTodo"></div>
+          </div>
+          <div class="kanban-col col-progress">
+            <div class="kanban-col-header">
+              <div class="kanban-col-title"><div class="kanban-dot"></div>In Progress</div>
+              <div class="kanban-count" id="countProgress">0</div>
+            </div>
+            <div class="kanban-cards" id="colProgress"></div>
+          </div>
+          <div class="kanban-col col-blocked">
+            <div class="kanban-col-header">
+              <div class="kanban-col-title"><div class="kanban-dot"></div>Blocked / Delayed</div>
+              <div class="kanban-count" id="countBlocked">0</div>
+            </div>
+            <div class="kanban-cards" id="colBlocked"></div>
+          </div>
+          <div class="kanban-col col-done">
+            <div class="kanban-col-header">
+              <div class="kanban-col-title"><div class="kanban-dot"></div>Completed</div>
+              <div class="kanban-count" id="countDone">0</div>
+            </div>
+            <div class="kanban-cards" id="colDone"></div>
+          </div>
+        </div>
+
+        <div class="empty-state hidden" id="tasksEmptyState">
+          <div class="empty-icon">📭</div>
+          <div class="empty-title">No tasks found</div>
+          <div class="empty-sub">Select a project or generate a plan to see tasks here.</div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: Timeline
+      ══════════════════════════════════════════════════════ -->
+      <div class="view" id="view-timeline">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📅 Milestone Timeline</div>
+            <div class="section-subtitle">Chronological view of all tasks and their schedule</div>
+          </div>
+        </div>
+
+        <!-- Mini Gantt / bar chart area -->
+        <div class="card mb-4" id="ganttCard">
+          <div class="card-header">
+            <div class="card-title">📊 Visual Schedule</div>
+            <span class="text-xs text-muted" id="ganttDateRange"></span>
+          </div>
+          <div id="ganttBars" style="overflow-x:auto;"></div>
+        </div>
+
+        <div class="timeline" id="timelineList"></div>
+
+        <div class="empty-state hidden" id="timelineEmpty">
+          <div class="empty-icon">📅</div>
+          <div class="empty-title">No timeline data</div>
+          <div class="empty-sub">Select a project with tasks to view the timeline.</div>
+        </div>
+      </div>
+
+      <!-- ══════════════════════════════════════════════════════
+           VIEW: History
+      ══════════════════════════════════════════════════════ -->
+      <div class="view" id="view-history">
+        <div class="section-header">
+          <div>
+            <div class="section-title">📜 Replan History</div>
+            <div class="section-subtitle">Log of all autonomous replanning events</div>
+          </div>
+        </div>
+
+        <div id="historyList"></div>
+        <div class="empty-state hidden" id="historyEmpty">
+          <div class="empty-icon">📋</div>
+          <div class="empty-title">No replan events yet</div>
+          <div class="empty-sub">When a task is blocked and replanned, the event will appear here.</div>
+        </div>
+      </div>
+
+    </div><!-- /page-content -->
+  </main>
+</div><!-- /app-shell -->
+
+<!-- ─── Replan Modal ────────────────────────────────────────── -->
+<div class="task-detail-overlay" id="replanModal">
+  <div class="task-detail-panel">
+    <div class="detail-header">
+      <div>
+        <div class="detail-id">AUTONOMOUS REPLANNING</div>
+        <div class="detail-title">🔄 Trigger Agent Replan</div>
+      </div>
+      <button class="detail-close" onclick="closeReplanModal()">✕</button>
+    </div>
+
+    <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:18px;line-height:1.6">
+      Select a blocked or delayed task. The LangGraph agent will cascade date shifts to all dependent tasks automatically.
+    </p>
+
+    <div class="form-group">
+      <label class="form-label">Blocked / Delayed Task</label>
+      <select class="form-control" id="replanTaskSelect"></select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Reason for Delay</label>
+      <textarea class="form-control" id="replanReason" rows="3"
+        placeholder="e.g. Third-party API unavailable, waiting for design sign-off…"></textarea>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label">Revised Start Date for Blocked Task</label>
+      <input type="date" class="form-control" id="replanDate" />
+    </div>
+
+    <button class="btn btn-primary w-full" id="replanSubmitBtn" onclick="submitReplan()">
+      🤖 Run Autonomous Replan
+    </button>
+  </div>
+</div>
+
+<!-- ─── API Key Modal ───────────────────────────────────────── -->
+<div class="task-detail-overlay" id="keyModal">
+  <div class="task-detail-panel" style="max-width:500px">
+    <div class="detail-header">
+      <div>
+        <div class="detail-id">SETTINGS</div>
+        <div class="detail-title">🔑 Configure LLM API Key</div>
+      </div>
+      <button class="detail-close" onclick="closeKeyModal()">✕</button>
+    </div>
+
+    <p style="font-size:.85rem;color:var(--text-secondary);margin-bottom:18px;line-height:1.6">
+      Enter your LLM API key to enable autonomous AI project planning and task decomposition.
+      Your key is saved locally to your <code>.env</code> file.
+    </p>
+
+    <div class="form-group">
+      <label class="form-label">LLM Provider</label>
+      <select class="form-control" id="keyProviderSelect" onchange="onKeyProviderChange()">
+        <option value="openai">OpenAI (GPT-4o-mini)</option>
+        <option value="anthropic">Anthropic (Claude 3.5 Haiku)</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label class="form-label" id="keyInputLabel">OpenAI API Key</label>
+      <input type="password" class="form-control font-mono" id="inputApiKey" placeholder="sk-..." />
+      <div style="font-size:.75rem;color:var(--text-muted);margin-top:6px;" id="keyHelpText">
+        OpenAI keys typically start with <code>sk-</code>. Get one at <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--indigo-400);text-decoration:underline;">platform.openai.com</a>.
+      </div>
+    </div>
+
+    <div style="display:flex;gap:10px;margin-top:20px;">
+      <button class="btn btn-secondary" style="flex:1" onclick="closeKeyModal()">Cancel</button>
+      <button class="btn btn-primary" style="flex:2" id="keySubmitBtn" onclick="submitApiKey()">
+        💾 Save & Connect
+      </button>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>
